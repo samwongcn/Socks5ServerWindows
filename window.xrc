@@ -132,7 +132,7 @@
                                     <flag>wxALIGN_CENTER_HORIZONTAL|wxALIGN_CENTER_VERTICAL|wxRIGHT|wxTOP|wxBOTTOM</flag>
                                     <border>5</border>
                                     <object class="wxStaticText" name="wxID_STATIC">
-                                                <label>绑定账户:</label>
+                                        <label>绑定账户:</label>
                                     </object>
                                 </object>
                                 <object class="sizeritem">
@@ -146,7 +146,8 @@
                                     <flag>wxALIGN_CENTER_HORIZONTAL|wxALIGN_CENTER_VERTICAL|wxRIGHT|wxTOP|wxBOTTOM</flag>
                                     <border>5</border>
                                     <object class="wxStaticText" name="wxID_STATIC">
-                                                <label>当前流量:</label>
+                                        <label>当前流量:</label>
+										<hidden>1</hidden>
                                     </object>
                                 </object>
                                 <object class="sizeritem">
@@ -154,6 +155,7 @@
                                     <border>5</border>
                                     <object class="wxTextCtrl" name="ID_TEXTCTRL5">
                                         <style>wxTE_READONLY</style>
+										<hidden>1</hidden>
                                     </object>
                                 </object>
                             </object>

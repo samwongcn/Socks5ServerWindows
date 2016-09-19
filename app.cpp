@@ -59,7 +59,7 @@ public:
     LogFrame(wxWindow *parent) : wxFrame(parent, wxID_ANY, wxT("日志")) {
         wxSizer *sizer = new wxBoxSizer(wxVERTICAL);
         wxTextCtrl *logger = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, wxTE_MULTILINE | wxTE_READONLY | wxNO_BORDER);
-		
+        
         sizer->Add(logger, 1, wxGROW | wxALL, 0);
         SetSizer(sizer);
         mRedirector = new wxStreamToTextRedirector(logger);
@@ -142,33 +142,50 @@ public:
         GetSizer()->Layout();
         mAutostart->Check(mKey->HasValue(wxT("server-windows")));
         Bind(wxEVT_THREAD, &Frame::OnUpdate, this);
-		
-		mData.unbind = false;
-		mData.bindingState = false;
+        
+        mData.unbind = false;
+        mData.bindingState = false;
         if (CreateThread(wxTHREAD_JOINABLE) == wxTHREAD_NO_ERROR)
             GetThread()->Run();
     }
     
     wxThread::ExitCode Entry() {
+        time_t now = 0, t;
         while (!GetThread()->TestDestroy()) {
-            {
-                wxCriticalSectionLocker locker(mDataCS);
-                if (id) {
-                    mData.id = id;
-                    wxHTTP http;
-                    unsigned long port;
-                    
-                    http.SetHeader(wxT("Content-type"), wxT("text/html; charset=utf-8"));
-					
-                    if (mData.unbind) {
-						Frame::UNBIND.GetPort().ToULong(&port);
-						if (http.Connect(Frame::UNBIND.GetServer(), port)) {
-							wxInputStream *httpStream = http.GetInputStream(Frame::UNBIND.GetPath() + wxT("?device.uid=") + mData.id + wxT("&device.id=") + mData.devId);
-							if (http.GetError() == wxPROTO_NOERR)
-								 mData.unbind = false;
-						}
-						http.Close();
-					}
+            wxCriticalSectionLocker locker(mDataCS);
+            mData.id = id;
+            /**
+             * fix 同步
+             *
+             *
+             */
+            if (!mData.id.IsEmpty()) {
+                wxHTTP http;
+                unsigned long port;
+                
+                http.SetHeader(wxT("Content-type"), wxT("text/html; charset=utf-8"));
+                
+                if (mData.unbind) {
+                    Frame::UNBIND.GetPort().ToULong(&port);
+                    if (http.Connect(Frame::UNBIND.GetServer(), port)) {
+                        wxInputStream *httpStream = http.GetInputStream(Frame::UNBIND.GetPath() + wxT("?device.uid=") + mData.id + wxT("&device.id=") + mData.devId);
+                        if (http.GetError() == wxPROTO_NOERR) {
+                            mData.unbind = false;
+                            mData.bindingState = false;
+                            /**
+                             * 解绑成功立即查询状态
+                             *
+                             *
+                             */
+                            now = 0;
+                        }
+                    }
+                    http.Close();
+                }
+                
+                t = wxDateTime::GetTimeNow();
+                if (t - now >= Frame::REFRESH_TIME) {
+                    now = t;
                     /**
                      * 基本信息
                      *
@@ -191,12 +208,12 @@ public:
                                 if ((p = resJSON->child)) {
                                     do {
                                         wxString keyA(p->string);
-                                            
+                                        
                                         if (keyA == wxT("device")) {
                                             if ((q = p->child)) {
                                                 do {
                                                     wxString keyB(q->string);
-                                                        
+                                                    
                                                     if (keyB == wxT("remote_ip"))
                                                         mData.ip = q->valuestring;
                                                     else if (keyB == wxT("area"))
@@ -234,13 +251,13 @@ public:
                                 if ((p = resJSON->child)) {
                                     do {
                                         wxString keyA(p->string);
-                                            
+                                        
                                         if (keyA == wxT("device")) {
                                             if ((q = p->child)) {
                                                 do {
                                                     wxString keyB(q->string);
                                                     if (keyB == wxT("id"))
-                                                        mData.devId = q->valuestring;
+                                                        mData.devId = wxString::Format("%d", q->valueint);
                                                     else if (keyB == wxT("bind_status"))
                                                         mData.bindingState = q->valuedouble ? true : false;
                                                     else if (keyB == wxT("name"))
@@ -257,11 +274,10 @@ public:
                             }
                         }
                     }
-                    http.Close();    
+                    http.Close();
+                    wxQueueEvent(GetEventHandler(), new wxThreadEvent());
                 }
             }
-            wxQueueEvent(GetEventHandler(), new wxThreadEvent());
-            wxSleep(10);
         }
         return 0;
     }
@@ -272,7 +288,7 @@ public:
      *
      */
     void OnUnbind(wxCommandEvent& event) {
-		wxCriticalSectionLocker locker(mDataCS);
+        wxCriticalSectionLocker locker(mDataCS);
         mData.unbind = true;
     }
     
@@ -323,7 +339,7 @@ public:
                  *
                  *
                  */
-                mAccount->SetValue(mData.name);
+                mAccount->SetValue(mData.nickname);
                 mQRCodePanel->Show(false);
                 mInfoPanel->Show(true);
                 GetSizer()->Layout();
@@ -353,8 +369,8 @@ private:
      *
      */
     struct {
-		bool unbind;
-		
+        bool unbind;
+        
         wxString id;
         wxString ip;
         wxString location;
@@ -405,6 +421,7 @@ private:
     static const wxURI UNBIND;
     
     static const wxString GET_APP;
+    static const time_t REFRESH_TIME;
 };
 
 BEGIN_EVENT_TABLE(Frame, wxFrame)
@@ -418,6 +435,7 @@ const wxURI Frame::GET_BINDINGSTATE = wxURI(wxT("http://zx.zed1.cn:88/ip_share/c
 const wxURI Frame::UNBIND = wxURI(wxT("http://zx.zed1.cn:88/ip_share/cgi/device!unbind.action"));
 
 const wxString Frame::GET_APP = wxT("http://zx.zed1.cn:88/ip_share/download/ipShare.apk");
+const time_t Frame::REFRESH_TIME = 10;
 
 /**
  * 应用实例
@@ -428,9 +446,9 @@ class App : public wxApp {
 public:
     
     virtual bool OnInit() {
-		if (!CreateMutex(NULL, FALSE, wxT("server-windows")) ||	\
-			GetLastError() == ERROR_ALREADY_EXISTS)
-			return false;
+        if (!CreateMutex(NULL, FALSE, wxT("server-windows")) ||    \
+            GetLastError() == ERROR_ALREADY_EXISTS)
+            return false;
         /**
          * 显示窗口
          *
@@ -442,45 +460,45 @@ public:
         frame->Show(true);
 
         wxSocketBase::Initialize();
-		SetUniqueId();
+        SetUniqueId();
        (new Thread())->Run();
         return true;
     }
 
 private:
-	
-	/**
-	 * 根据 MAC 地址设置 ID 需要 Iphlpapi
-	 *
-	 *
-	 */
-	bool SetUniqueId() {
-		ULONG size = sizeof(sizeof(IP_ADAPTER_INFO));
-		IP_ADAPTER_INFO *adapterInfo = (IP_ADAPTER_INFO *) malloc(size);
-		bool setted = false;
-		
-		if (adapterInfo) {
-			if (GetAdaptersInfo(adapterInfo, &size) == ERROR_BUFFER_OVERFLOW) {
-				free(adapterInfo);
-				adapterInfo = (IP_ADAPTER_INFO *) malloc(size);
-				if (adapterInfo) {
-					if (GetAdaptersInfo(adapterInfo, &size) == NO_ERROR) {
-						FILE *fp;
-						if ((fp = fopen("id.txt", "wt"))) {
-							for (int i = 0; i < adapterInfo->AddressLength; i++)
-								fprintf(fp, "%02x", adapterInfo->Address[i]);
-							fclose(fp);
-							setted = true;
-						}
-					}
-				} else
-					return false;
-			}
-			free(adapterInfo);
-		}
-		return setted;
-	}
-	
+    
+    /**
+     * 根据 MAC 地址设置 ID 需要 Iphlpapi
+     *
+     *
+     */
+    bool SetUniqueId() {
+        ULONG size = sizeof(sizeof(IP_ADAPTER_INFO));
+        IP_ADAPTER_INFO *adapterInfo = (IP_ADAPTER_INFO *) malloc(size);
+        bool setted = false;
+        
+        if (adapterInfo) {
+            if (GetAdaptersInfo(adapterInfo, &size) == ERROR_BUFFER_OVERFLOW) {
+                free(adapterInfo);
+                adapterInfo = (IP_ADAPTER_INFO *) malloc(size);
+                if (adapterInfo) {
+                    if (GetAdaptersInfo(adapterInfo, &size) == NO_ERROR) {
+                        FILE *fp;
+                        if ((fp = fopen("id.txt", "wt"))) {
+                            for (int i = 0; i < adapterInfo->AddressLength; i++)
+                                fprintf(fp, "%02x", adapterInfo->Address[i]);
+                            fclose(fp);
+                            setted = true;
+                        }
+                    }
+                } else
+                    return false;
+            }
+            free(adapterInfo);
+        }
+        return setted;
+    }
+    
 };
 
 IMPLEMENT_APP(App)
