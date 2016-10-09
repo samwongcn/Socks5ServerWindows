@@ -26,8 +26,10 @@
 #include "cJSON.h"
 
 #include "Iphlpapi.h"
+#include "windowsx.h"
 
 #define MAX_BUF_SIZE 1024
+#define WM_TRAY (WM_USER + 100)
 
 /**
  * 出口线程
@@ -113,19 +115,23 @@ public:
     Frame() {
         wxXmlResource::Get()->LoadFrame(this, NULL, wxT("ID_WXFRAME"));
         
+        mMenu = new wxMenu();
+        mMenu->Append(10001, wxT("开机启动"), wxEmptyString, wxITEM_CHECK);
+        mMenu->Append(10002, wxT("退出"));
+        
         /**
          * 初始化控件
          *
          *
          */
         mId = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL")));
-        mIp = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL1")));
-        mLocation = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL2")));
+        //- mIp = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL1")));
+        //- mLocation = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL2")));
         mBindingState = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL3")));
-        mAutostart = GetMenuBar()->FindItem(XRCID("ID_MENUITEM"));
+        mAutostart = mMenu->FindItem(10001);
         mInfoPanel = static_cast<wxPanel *>(FindWindow(wxT("ID_PANEL1")));
         mAccount = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL4")));
-        mTxd = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL5")));
+        //- mTxd = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL5")));
         mQRCodePanel = static_cast<wxPanel *>(FindWindow(wxT("ID_PANEL")));
         mQRCode = static_cast<wxStaticBitmap *>(FindWindow(wxT("ID_QRCODE")));
         
@@ -136,7 +142,7 @@ public:
          *
          *
          */
-        SetSize(400, 550);
+        SetSize(400, 622);
         mInfoPanel->Show(false);
         mQRCodePanel->Show(false);
         GetSizer()->Layout();
@@ -147,6 +153,34 @@ public:
         mData.bindingState = false;
         if (CreateThread(wxTHREAD_JOINABLE) == wxTHREAD_NO_ERROR)
             GetThread()->Run();
+        
+        /**
+         * 配置系统托盘
+         *
+         *
+         */
+        HWND hWnd = (HWND) GetHandle();
+        mNid.cbSize = sizeof(NOTIFYICONDATA);  
+        mNid.hWnd = hWnd;
+        mNid.uFlags = NIF_ICON | NIF_MESSAGE;
+        mNid.uCallbackMessage = WM_TRAY;
+        mNid.hIcon = (HICON) LoadImage(NULL, wxT("./skin/9.ico"), IMAGE_ICON, 0, 0, LR_LOADFROMFILE);
+        Shell_NotifyIcon(NIM_ADD, &mNid);
+        
+        /**
+         * 处理 WM_NCHITTEST 消息
+         *
+         *
+         */
+        MSWRegisterMessageHandler(WM_NCHITTEST, Frame::MessageHandler);
+        MSWRegisterMessageHandler(WM_TRAY, Frame::MessageHandler);
+    }
+    
+    virtual ~Frame() {
+        Shell_NotifyIcon(NIM_DELETE, &mNid);
+        
+        MSWUnregisterMessageHandler(WM_NCHITTEST, Frame::MessageHandler);
+        MSWUnregisterMessageHandler(WM_TRAY, Frame::MessageHandler);
     }
     
     wxThread::ExitCode Entry() {
@@ -323,13 +357,13 @@ public:
     void OnUpdate(wxThreadEvent& event) {
         wxCriticalSectionLocker locker(mDataCS);
         mId->SetValue(mData.id);
-        mIp->SetValue(mData.ip);
-        mLocation->SetValue(mData.location);
+        //- mIp->SetValue(mData.ip);
+        //- mLocation->SetValue(mData.location);
         if (!mData.id.IsEmpty()) {
             mBindingState->SetValue(mData.bindingState ? wxT("已绑定") : wxT("未绑定"));
             
             if (!mData.bindingState) {
-                mQRCode->SetBitmap(* GetQRCode(Frame::GET_APP + wxT("?") + mData.id));
+                mQRCode->SetBitmap(* Frame::GetQRCode(Frame::GET_APP + wxT("?") + mData.id));
                 mQRCodePanel->Show(true);
                 mInfoPanel->Show(false);
                 GetSizer()->Layout();
@@ -347,6 +381,14 @@ public:
         }
     }
     
+    void OnMinimize(wxCommandEvent& event) {
+        ::PostMessage((HWND) GetHandle(), WM_SYSCOMMAND, SC_MINIMIZE, 0);
+    }
+    
+    void OnClose(wxCommandEvent& event) {
+        ::PostMessage((HWND) GetHandle(), WM_CLOSE, 0, 0);
+    }
+    
 private:
     wxWeakRef<LogFrame> mLog;
     
@@ -362,6 +404,14 @@ private:
     wxStaticBitmap *mQRCode;
     
     wxRegKey *mKey;
+    
+    /**
+     * 弹出菜单
+     *
+     *
+     */
+    wxMenu *mMenu;
+    NOTIFYICONDATA mNid;
     
     /**
      * 数据区
@@ -388,7 +438,7 @@ private:
      *
      *
      */
-    wxBitmap *GetQRCode(const char *string) {
+    static wxBitmap *GetQRCode(const char *string) {
         QRcode *qrCode;
         wxBitmap *bitmap = NULL;
         
@@ -409,6 +459,39 @@ private:
         return bitmap;
     }
     
+    /**
+     * 处理 WM_NCHITTEST
+     *
+     *
+     *
+     */
+    static bool MessageHandler(wxWindowMSW *win, WXUINT nMsg, WXWPARAM wParam, WXLPARAM lParam) {
+        switch (nMsg) {
+        case WM_NCHITTEST:
+            if (win->GetName() == wxT("ID_TITLE")) {
+                POINT point = { 
+                    GET_X_LPARAM(lParam), 
+                    GET_Y_LPARAM(lParam) 
+                };
+                while (win->GetParent())
+                    win = win->GetParent();
+                HWND hWnd = (HWND) win->GetHandle();
+                ::ScreenToClient(hWnd, &point);
+                ::PostMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, lParam);
+                return true;
+            }
+            break;
+        case WM_TRAY:
+            if (LOWORD(lParam) == WM_RBUTTONDOWN) {
+                Frame *frame = static_cast<Frame *>(win);
+                frame->PopupMenu(frame->mMenu);
+                return true;
+            }
+            break;
+        }
+        return false;
+    }
+    
     DECLARE_EVENT_TABLE()
 
     /**
@@ -425,9 +508,19 @@ private:
 };
 
 BEGIN_EVENT_TABLE(Frame, wxFrame)
-EVT_BUTTON(XRCID("ID_BUTTON"), Frame::OnUnbind)
-EVT_MENU(XRCID("ID_MENUITEM"), Frame::OnAutostartChecked)
-EVT_MENU(XRCID("ID_MENUITEM1"), Frame::OnEnableLog)
+//- EVT_BUTTON(XRCID("ID_BUTTON"), Frame::OnUnbind)
+//- EVT_MENU(XRCID("ID_MENUITEM"), Frame::OnAutostartChecked)
+//- EVT_MENU(XRCID("ID_MENUITEM1"), Frame::OnEnableLog)
+
+    /**
+     * 功能按钮
+     *
+     *
+     */
+    EVT_BUTTON(XRCID("ID_MINIMIZE"), Frame::OnMinimize)
+    EVT_BUTTON(XRCID("ID_CLOSE"), Frame::OnClose)
+    EVT_MENU(10001, Frame::OnAutostartChecked)
+    EVT_MENU(10002, Frame::OnClose)
 END_EVENT_TABLE()
 
 const wxURI Frame::GET_INFO = wxURI(wxT("http://man1.zed1.cn:9000/manage/cgi/api!getDeviceArea.action"));
@@ -455,7 +548,7 @@ public:
          *
          */
         wxXmlResource::Get()->InitAllHandlers();
-        wxXmlResource::Get()->LoadFile(wxFileName(wxT("./window.xrc")));
+        wxXmlResource::Get()->LoadFile(wxFileName(wxT("./skin/window.xrc")));
         Frame *frame = new Frame();
         frame->Show(true);
 
