@@ -21,6 +21,7 @@
 #include "wx/protocol/http.h"
 #include "wx/uri.h"
 #include "wx/sstream.h"
+#include "wx/taskbar.h"
 
 #include "qrencode.h"
 #include "cJSON.h"
@@ -39,6 +40,13 @@
 extern char *id;
 
 extern "C" int work(int argc, char *argv[]);
+
+/**
+ * 工作目录
+ *
+ *
+ */
+TCHAR workingDir[PATH_MAX];
 
 class Thread : public wxThread {
 public:
@@ -105,6 +113,68 @@ private:
 };
 
 /**
+ * 系统托盘
+ *
+ *
+ */
+class TaskBarIcon : public wxTaskBarIcon {
+public:
+    TaskBarIcon(wxFrame *frame) {
+        mFrame = frame;
+        mKey = new wxRegKey(wxRegKey::HKCU, "Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+    }
+    
+private:
+    wxFrame *mFrame;
+    
+    /**
+     * 产生菜单前读取配置
+     *
+     *
+     */
+    wxRegKey *mKey;
+    
+    virtual wxMenu *CreatePopupMenu() {
+        wxMenu *menu = new wxMenu();
+        wxMenuItem *menuItem = new wxMenuItem(NULL, 10001, wxT("开机启动"), wxEmptyString, wxITEM_CHECK);
+        
+        menuItem->Check(mKey->HasValue(wxT("server-windows")));
+        menu->Append(menuItem);
+        menu->Append(10002, wxT("退出"));
+        
+        return menu;
+    }
+    
+    /**
+     * 系统托盘实现
+     *
+     *
+     */
+    void OnShow(wxTaskBarIconEvent& event) {
+        mFrame->Show(true);
+    }
+
+    void OnAutostartChecked(wxCommandEvent& event) {
+        if (event.IsChecked())
+            mKey->SetValue(wxT("server-windows"), workingDir);
+        else
+            mKey->DeleteValue(wxT("server-windows"));
+    }
+
+    void OnClose(wxCommandEvent& event) {
+        ::PostQuitMessage(0);
+    }
+    
+    DECLARE_EVENT_TABLE()
+};
+
+BEGIN_EVENT_TABLE(TaskBarIcon, wxTaskBarIcon)
+    EVT_TASKBAR_LEFT_UP(TaskBarIcon::OnShow)
+    EVT_MENU(10001, TaskBarIcon::OnAutostartChecked)
+    EVT_MENU(10002, TaskBarIcon::OnClose)
+END_EVENT_TABLE()
+
+/**
  * 使用一个线程查询状态
  *
  *
@@ -114,10 +184,10 @@ public:
     
     Frame() {
         wxXmlResource::Get()->LoadFrame(this, NULL, wxT("ID_WXFRAME"));
-        
-        mMenu = new wxMenu();
-        mMenu->Append(10001, wxT("开机启动"), wxEmptyString, wxITEM_CHECK);
-        mMenu->Append(10002, wxT("退出"));
+        mTaskBarIcon = new TaskBarIcon(this);
+        wxIcon *icon = new wxIcon();
+        icon->CreateFromHICON((WXHICON) LoadImage(NULL, wxT("./skin/9.ico"), IMAGE_ICON, 0, 0, LR_LOADFROMFILE));
+        mTaskBarIcon->SetIcon(*icon);
         
         /**
          * 初始化控件
@@ -128,14 +198,14 @@ public:
         //- mIp = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL1")));
         //- mLocation = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL2")));
         mBindingState = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL3")));
-        mAutostart = mMenu->FindItem(10001);
+        //- mAutostart = GetMenuBar()->FindItem(XRCID("ID_MENUITEM"));
         mInfoPanel = static_cast<wxPanel *>(FindWindow(wxT("ID_PANEL1")));
         mAccount = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL4")));
         //- mTxd = static_cast<wxTextCtrl *>(FindWindow(wxT("ID_TEXTCTRL5")));
         mQRCodePanel = static_cast<wxPanel *>(FindWindow(wxT("ID_PANEL")));
         mQRCode = static_cast<wxStaticBitmap *>(FindWindow(wxT("ID_QRCODE")));
         
-        mKey = new wxRegKey(wxRegKey::HKCU, "Software\\Microsoft\\Windows\\CurrentVersion\\Run");
+        //- mKey = new wxRegKey(wxRegKey::HKCU, "Software\\Microsoft\\Windows\\CurrentVersion\\Run");
         
         /**
          * 初始化状态
@@ -146,7 +216,7 @@ public:
         mInfoPanel->Show(false);
         mQRCodePanel->Show(false);
         GetSizer()->Layout();
-        mAutostart->Check(mKey->HasValue(wxT("server-windows")));
+        //- mAutostart->Check(mKey->HasValue(wxT("server-windows")));
         Bind(wxEVT_THREAD, &Frame::OnUpdate, this);
         
         mData.unbind = false;
@@ -155,32 +225,17 @@ public:
             GetThread()->Run();
         
         /**
-         * 配置系统托盘
-         *
-         *
-         */
-        HWND hWnd = (HWND) GetHandle();
-        mNid.cbSize = sizeof(NOTIFYICONDATA);  
-        mNid.hWnd = hWnd;
-        mNid.uFlags = NIF_ICON | NIF_MESSAGE;
-        mNid.uCallbackMessage = WM_TRAY;
-        mNid.hIcon = (HICON) LoadImage(NULL, wxT("./skin/9.ico"), IMAGE_ICON, 0, 0, LR_LOADFROMFILE);
-        Shell_NotifyIcon(NIM_ADD, &mNid);
-        
-        /**
          * 处理 WM_NCHITTEST 消息
          *
          *
          */
         MSWRegisterMessageHandler(WM_NCHITTEST, Frame::MessageHandler);
-        MSWRegisterMessageHandler(WM_TRAY, Frame::MessageHandler);
     }
     
     virtual ~Frame() {
-        Shell_NotifyIcon(NIM_DELETE, &mNid);
-        
         MSWUnregisterMessageHandler(WM_NCHITTEST, Frame::MessageHandler);
-        MSWUnregisterMessageHandler(WM_TRAY, Frame::MessageHandler);
+        if (mTaskBarIcon)
+            delete mTaskBarIcon;
     }
     
     wxThread::ExitCode Entry() {
@@ -337,23 +392,6 @@ public:
         mLog->Show(true);
     }
     
-    /**
-     * 往注测表中写入启动项
-     *
-     *
-     */
-    void OnAutostartChecked(wxCommandEvent& event) {
-        if (event.IsChecked()) {
-            TCHAR fileName[PATH_MAX];
-            
-            if (GetModuleFileName(NULL, fileName, PATH_MAX))
-                if (mKey->SetValue(wxT("server-windows"), fileName))
-                    return ;
-            mAutostart->Check(false);
-        } else
-            mKey->DeleteValue(wxT("server-windows"));
-    }
-    
     void OnUpdate(wxThreadEvent& event) {
         wxCriticalSectionLocker locker(mDataCS);
         mId->SetValue(mData.id);
@@ -381,12 +419,17 @@ public:
         }
     }
     
+    /**
+     * 最小化窗口
+     *
+     *
+     */
     void OnMinimize(wxCommandEvent& event) {
-        ::PostMessage((HWND) GetHandle(), WM_SYSCOMMAND, SC_MINIMIZE, 0);
+        Show(false);
     }
     
     void OnClose(wxCommandEvent& event) {
-        ::PostMessage((HWND) GetHandle(), WM_CLOSE, 0, 0);
+        ::PostQuitMessage(0);
     }
     
 private:
@@ -411,7 +454,7 @@ private:
      *
      */
     wxMenu *mMenu;
-    NOTIFYICONDATA mNid;
+    TaskBarIcon *mTaskBarIcon;
     
     /**
      * 数据区
@@ -481,13 +524,6 @@ private:
                 return true;
             }
             break;
-        case WM_TRAY:
-            if (LOWORD(lParam) == WM_RBUTTONDOWN) {
-                Frame *frame = static_cast<Frame *>(win);
-                frame->PopupMenu(frame->mMenu);
-                return true;
-            }
-            break;
         }
         return false;
     }
@@ -519,8 +555,6 @@ BEGIN_EVENT_TABLE(Frame, wxFrame)
      */
     EVT_BUTTON(XRCID("ID_MINIMIZE"), Frame::OnMinimize)
     EVT_BUTTON(XRCID("ID_CLOSE"), Frame::OnClose)
-    EVT_MENU(10001, Frame::OnAutostartChecked)
-    EVT_MENU(10002, Frame::OnClose)
 END_EVENT_TABLE()
 
 const wxURI Frame::GET_INFO = wxURI(wxT("http://man1.zed1.cn:9000/manage/cgi/api!getDeviceArea.action"));
@@ -539,9 +573,12 @@ class App : public wxApp {
 public:
     
     virtual bool OnInit() {
-        if (!CreateMutex(NULL, FALSE, wxT("server-windows")) ||    \
+        if (!::CreateMutex(NULL, FALSE, wxT("server-windows")) ||    \
             GetLastError() == ERROR_ALREADY_EXISTS)
             return false;
+        
+        if (GetModuleFileName(NULL, workingDir, PATH_MAX))
+            ::SetCurrentDirectory(wxString(workingDir) + wxT("\\..\\"));
         /**
          * 显示窗口
          *
@@ -557,7 +594,7 @@ public:
        (new Thread())->Run();
         return true;
     }
-
+    
 private:
     
     /**
