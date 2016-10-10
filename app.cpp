@@ -338,6 +338,12 @@ public:
                                 cJSON *q;
                                 
                                 if ((p = resJSON->child)) {
+                                    /**
+                                     * 修正解除绑定
+                                     *
+                                     *
+                                     */
+                                    mData.bindingState = false;
                                     do {
                                         wxString keyA(p->string);
                                         
