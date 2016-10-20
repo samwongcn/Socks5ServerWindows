@@ -1,21 +1,20 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 <resource version="2.3.0.1" xmlns="http://www.wxwidgets.org/wxxrc">
     <object class="wxFrame" name="ID_WXFRAME">
-        <style>wxSTATIC_BORDER|wxCLIP_CHILDREN|wxFRAME_NO_TASKBAR</style>
-        <exstyle>wxWS_EX_TRANSIENT</exstyle>
+        <style>wxNO_BORDER|wxFRAME_FLOAT_ON_PARENT</style>
         <bg>#FFFFFF</bg>
-        <size>400,622</size>
+        <size>400,700</size>
         <title>赚积分PC客户端</title>
         <centered>1</centered>
         <object class="wxBitmapButton" name="ID_MINIMIZE">
-            <size>45,23</size>
-            <pos>287,0</pos>
+            <size>41,26</size>
+            <pos>317,0</pos>
             <style>wxBU_AUTODRAW|wxNO_BORDER</style>
             <bitmap>2.bmp</bitmap>
         </object>
         <object class="wxBitmapButton" name="ID_CLOSE">
-            <size>45,23</size>
-            <pos>332,0</pos>
+            <size>41,26</size>
+            <pos>359,0</pos>
             <style>wxBU_AUTODRAW|wxNO_BORDER</style>
             <bitmap>3.bmp</bitmap>
         </object>
@@ -25,7 +24,7 @@
                 <flag>wxGROW|wxALL</flag>
                 <border>0</border>
                 <object class="wxStaticBitmap" name="ID_TITLE">
-                    <size>400,79</size>
+                    <size>400,67</size>
                     <bitmap>1.bmp</bitmap>
                 </object>
             </object>
@@ -42,7 +41,7 @@
                         <flag>wxALIGN_CENTER_HORIZONTAL|wxALIGN_CENTER_VERTICAL|wxALL</flag>
                         <border>0</border>
                         <object class="wxStaticBitmap" name="wxID_STATIC">
-                            <size>123,79</size>
+                            <size>127,78</size>
                             <bitmap>4.bmp</bitmap>
                         </object>
                     </object>
@@ -57,7 +56,7 @@
                                 <family>swiss</family>
                                 <face>Microsoft YaHei UI</face>
                             </font>
-                            <fg>#767676</fg>
+                            <fg>#38628A</fg>
                         </object>
                     </object>
                 </object>
@@ -66,7 +65,7 @@
                 <flag>wxGROW|wxALL</flag>
                 <border>0</border>
                 <object class="wxStaticBitmap" name="wxID_STATIC">
-                    <size>398,2</size>
+                    <size>400,1</size>
                     <bitmap>6.bmp</bitmap>
                 </object>
             </object>
@@ -83,7 +82,7 @@
                         <flag>wxALIGN_CENTER_HORIZONTAL|wxALIGN_CENTER_VERTICAL|wxALL</flag>
                         <border>0</border>
                         <object class="wxStaticBitmap" name="wxID_STATIC">
-                            <size>123,79</size>
+                            <size>127,78</size>
                             <bitmap>5.bmp</bitmap>
                         </object>
                     </object>
@@ -98,7 +97,7 @@
                                 <family>swiss</family>
                                 <face>Microsoft YaHei UI</face>
                             </font>
-                            <fg>#767676</fg>
+                            <fg>#38628A</fg>
                         </object>
                     </object>
                 </object>
@@ -107,7 +106,7 @@
                 <flag>wxGROW|wxALL</flag>
                 <border>0</border>
                 <object class="wxStaticBitmap" name="wxID_STATIC">
-                    <size>398,2</size>
+                    <size>400,1</size>
                     <bitmap>6.bmp</bitmap>
                 </object>
             </object>
@@ -122,16 +121,16 @@
                     <object class="wxBoxSizer">
                         <orient>wxVERTICAL</orient>
                         <object class="sizeritem">
-                            <flag>wxGROW|wxALL</flag>
-                            <border>24</border>
+                            <flag>wxGROW|wxTOP</flag>
+                            <border>48</border>
                             <object class="wxStaticBitmap" name="ID_QRCODE">
                                 <size>264,264</size>
                                 <bitmap>8.bmp</bitmap>
                             </object>
                         </object>
                         <object class="sizeritem">
-                            <flag>wxGROW|wxALL</flag>
-                            <border>0</border>
+                            <flag>wxGROW|wxTOP</flag>
+                            <border>48</border>
                             <object class="wxStaticText" name="wxID_STATIC">
                                 <font>
                                     <size>11</size>
@@ -170,7 +169,7 @@
                                     <flag>wxALIGN_CENTER_HORIZONTAL|wxALIGN_CENTER_VERTICAL|wxALL</flag>
                                     <border>0</border>
                                     <object class="wxStaticBitmap" name="wxID_STATIC">
-                                        <size>123,79</size>
+                                        <size>127,78</size>
                                         <bitmap>7.bmp</bitmap>
                                     </object>
                                 </object>
@@ -185,7 +184,7 @@
                                             <family>swiss</family>
                                             <face>Microsoft YaHei UI</face>
                                         </font>
-                                        <fg>#767676</fg>
+                                        <fg>#38628A</fg>
                                     </object>
                                 </object>
                             </object>
@@ -194,7 +193,7 @@
                             <flag>wxGROW|wxALL</flag>
                             <border>0</border>
                             <object class="wxStaticBitmap" name="wxID_STATIC">
-                                <size>398,2</size>
+                                <size>400,1</size>
                                 <bitmap>6.bmp</bitmap>
                             </object>
                         </object>

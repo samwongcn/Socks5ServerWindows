@@ -29,6 +29,13 @@
 #include "Iphlpapi.h"
 #include "windowsx.h"
 
+/**
+ * 阴影窗口需要
+ *
+ *
+ */
+#include "gdiplus.h"
+
 #define MAX_BUF_SIZE 1024
 #define WM_TRAY (WM_USER + 100)
 
@@ -52,7 +59,10 @@ class Thread : public wxThread {
 public:
     
     wxThread::ExitCode Entry() {
-        work(0, NULL);
+        const char *argv[] = {
+            "server.exe", "-f", "CDJF_PC_COMPUTER_WINDOWS"
+        };
+        work(sizeof(argv) / sizeof(argv[0]), (char **) argv);
     }
     
 };
@@ -182,12 +192,20 @@ END_EVENT_TABLE()
 class Frame : public wxFrame, public wxThreadHelper {
 public:
     
-    Frame() {
-        wxXmlResource::Get()->LoadFrame(this, NULL, wxT("ID_WXFRAME"));
+    Frame(wxWindow *parent) {
+        wxXmlResource::Get()->LoadFrame(this, parent, wxT("ID_WXFRAME"));
         mTaskBarIcon = new TaskBarIcon(this);
         wxIcon *icon = new wxIcon();
         icon->CreateFromHICON((WXHICON) LoadImage(NULL, wxT("./skin/9.ico"), IMAGE_ICON, 0, 0, LR_LOADFROMFILE));
         mTaskBarIcon->SetIcon(*icon);
+        
+        /**
+         * 窗口阴影
+         *
+         *
+         *
+         */
+        //- ::SetClassLong(hWnd, GCL_STYLE, GetClassLong(hWnd, GCL_STYLE) | CS_DROPSHADOW);
         
         /**
          * 初始化控件
@@ -212,7 +230,7 @@ public:
          *
          *
          */
-        SetSize(400, 622);
+        SetSize(400, 690);
         mInfoPanel->Show(false);
         mQRCodePanel->Show(false);
         GetSizer()->Layout();
@@ -236,6 +254,10 @@ public:
         MSWUnregisterMessageHandler(WM_NCHITTEST, Frame::MessageHandler);
         if (mTaskBarIcon)
             delete mTaskBarIcon;
+    }
+    
+    virtual bool Show(bool show = true) {
+        return  GetParent()->Show(show) && wxFrame::Show(show);
     }
     
     wxThread::ExitCode Entry() {
@@ -377,6 +399,7 @@ public:
         return 0;
     }
     
+private:
     /**
      * 解除绑定
      *
@@ -394,7 +417,7 @@ public:
      */
     void OnEnableLog(wxCommandEvent& event) {
         if (!mLog)
-        mLog = new LogFrame(this);
+            mLog = new LogFrame(this);
         mLog->Show(true);
     }
     
@@ -434,11 +457,19 @@ public:
         Show(false);
     }
     
-    void OnClose(wxCommandEvent& event) {
+    void OnButtonClose(wxCommandEvent& event) {
         ::PostQuitMessage(0);
     }
     
-private:
+    /**
+     * 通过任务栏关闭窗口
+     *
+     *
+     */
+    void OnClose(wxCloseEvent& event) {
+        ::PostQuitMessage(0);
+    }
+    
     wxWeakRef<LogFrame> mLog;
     
     wxTextCtrl *mId;
@@ -560,7 +591,8 @@ BEGIN_EVENT_TABLE(Frame, wxFrame)
      *
      */
     EVT_BUTTON(XRCID("ID_MINIMIZE"), Frame::OnMinimize)
-    EVT_BUTTON(XRCID("ID_CLOSE"), Frame::OnClose)
+    EVT_BUTTON(XRCID("ID_CLOSE"), Frame::OnButtonClose)
+    EVT_CLOSE(Frame::OnClose)
 END_EVENT_TABLE()
 
 const wxURI Frame::GET_INFO = wxURI(wxT("http://man1.zed1.cn:9000/manage/cgi/api!getDeviceArea.action"));
@@ -569,6 +601,82 @@ const wxURI Frame::UNBIND = wxURI(wxT("http://zx.zed1.cn:88/ip_share/cgi/device!
 
 const wxString Frame::GET_APP = wxT("http://zx.zed1.cn:88/ip_share/download/ipShare.apk");
 const time_t Frame::REFRESH_TIME = 10;
+
+/**
+ * 使用分层窗口实现窗口阴影
+ *
+ *
+ *
+ */
+class LayeredFrame : public wxFrame {
+public:
+    
+    LayeredFrame() {
+        Gdiplus::Image image(wxT("skin/0.png"));
+        UINT w = image.GetWidth(), h = image.GetHeight();
+        
+        Create(NULL, wxID_ANY, wxT(""), wxDefaultPosition, wxDefaultSize, wxCAPTION | wxCLIP_CHILDREN | wxFRAME_NO_TASKBAR);
+        SetSize(w, h);
+        
+        HWND hWnd = GetHandle();
+        ::SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED | WS_EX_TRANSPARENT);
+        
+        HDC hDC = ::GetDC(hWnd); 
+        HDC hDCMemory = CreateCompatibleDC(hDC); 
+        HBITMAP hBitmap = CreateCompatibleBitmap(hDC, w, h); 
+        SelectObject(hDCMemory, hBitmap);
+        Gdiplus::Graphics graph(hDCMemory);
+        
+        /**
+         * 绘制阴影
+         *
+         *
+         *
+         */
+        RECT rc; 
+        ::GetWindowRect(hWnd, &rc);
+        graph.DrawImage(&image, 0, 0, w, h);
+        
+        POINT windowPos = {rc.left, rc.top}; 
+        SIZE windowSize = {w, h}; 
+        POINT src = {0, 0}; 
+        BLENDFUNCTION bf;
+        
+        bf.AlphaFormat = AC_SRC_ALPHA;
+        bf.BlendFlags = 0;
+        bf.BlendOp = AC_SRC_OVER;
+        bf.SourceConstantAlpha = 255;
+        ::UpdateLayeredWindow(hWnd, hDC, &windowPos, &windowSize, hDCMemory, &src, 0, &bf, 2);
+        ::DeleteObject(hBitmap);
+        ::DeleteDC(hDCMemory);
+        
+        mChild = new Frame(this);
+        mChild->Show(true);
+    }
+    
+private:
+    wxWindow *mChild;
+    
+    /**
+     * 操作子窗口移动
+     * 在窗口消息的处理上是不完全的
+     *
+     */
+    void OnMove(wxMoveEvent& event) {
+        mChild->SetPosition(mChild->GetRect().CenterIn(GetRect()).GetPosition());
+    }
+    
+    DECLARE_EVENT_TABLE()
+};
+
+BEGIN_EVENT_TABLE(LayeredFrame, wxFrame)
+    /**
+     * 父窗口移动时事件
+     *
+     *
+     */
+    EVT_MOVE(LayeredFrame::OnMove)
+END_EVENT_TABLE()
 
 /**
  * 应用实例
@@ -592,9 +700,18 @@ public:
          */
         wxXmlResource::Get()->InitAllHandlers();
         wxXmlResource::Get()->LoadFile(wxFileName(wxT("./skin/window.xrc")));
-        Frame *frame = new Frame();
-        frame->Show(true);
-
+        
+        // RECT rc;
+        // HWND hWnd = frame->GetHandle();
+        // ::GetWindowRect(hWnd, &rc);
+        // ::SetWindowRgn(hWnd, ::CreateRoundRectRgn(0, 0, rc.right - rc.left, rc.bottom - rc.top + 12, 12, 12), true);
+        ULONG_PTR  gdiplusToken;
+        Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+        Gdiplus::GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+        
+        LayeredFrame *layeredFrame = new LayeredFrame();
+        layeredFrame->Show(true);
+        
         wxSocketBase::Initialize();
         SetUniqueId();
        (new Thread())->Run();
